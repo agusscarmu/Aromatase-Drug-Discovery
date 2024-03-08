@@ -1,10 +1,54 @@
 import streamlit as st
 import pandas as pd
 from PIL import Image
+import matplotlib.pyplot as plt 
+import seaborn as sns
 import subprocess
 import os
 import base64
 import joblib
+
+def randomColor():
+    import random
+    color = "#" + ''.join([random.choice('0123456789ABCDEF') for i in range(6)])
+    return color
+
+def draw(data):
+    df = pd.read_csv('bioactivity_data_pIC50.csv')
+
+    plt.figure(figsize=(5.5,5.5))
+
+    sns.scatterplot(x='pIC50', y='LogP', data=df, size='pIC50', edgecolor='black', alpha=0.7)
+
+
+    for column_name, column_values in data.iterrows():
+
+        plt.axvline(x=column_values[1], color=randomColor(), linestyle='--', label=column_values[0])
+
+
+
+    plt.xlabel('pIC50', fontsize=14, fontweight='bold')
+    plt.ylabel('LogP', fontsize=14, fontweight='bold')
+    plt.legend(bbox_to_anchor=(1.05,1), loc=2, borderaxespad=0)
+
+    st.header('**pIC50 & LogP**')
+    st.pyplot(plt)
+
+    plt.figure(figsize=(5.5,5.5))
+
+    sns.scatterplot(x='pIC50', y='MW', data=df, size='pIC50', edgecolor='black', alpha=0.7)
+
+    for column_name, column_values in data.iterrows():
+
+        plt.axvline(x=column_values[1], color=randomColor(), linestyle='--', label=column_values[0])
+
+    plt.xlabel('pIC50', fontsize=14, fontweight='bold')
+    plt.ylabel('MW', fontsize=14, fontweight='bold')
+    plt.legend(bbox_to_anchor=(1.05,1), loc=2, borderaxespad=0)
+
+    st.header('**MW & pIC50**')
+    st.pyplot(plt)
+
 
 # Molecular descriptor calculator
 def desc_calc():
@@ -12,7 +56,7 @@ def desc_calc():
     bashCommand = "java -Xms1G -Xmx1G -Djava.awt.headless=true -jar ./PaDEL-Descriptor/PaDEL-Descriptor.jar -removesalt -standardizenitro -fingerprints -descriptortypes ./PaDEL-Descriptor/PubchemFingerprinter.xml -dir ./ -file descriptors_output.csv"
     process = subprocess.Popen(bashCommand.split(), stdout=subprocess.PIPE)
     output, error = process.communicate()
-    # os.remove('molecule.smi')
+    os.remove('molecule.smi')
 
 # File download
 def filedownload(df):
@@ -33,6 +77,8 @@ def build_model(input_data, molecule):
     df = pd.concat([molecule_name, prediction_output], axis=1)
     st.write(df)
     st.markdown(filedownload(df), unsafe_allow_html=True)
+    with st.spinner("Generating visualizations..."):
+        draw(df)
 
 # # Logo image
 # image = Image.open('logo.png')
@@ -61,10 +107,10 @@ def process_data(data):
     return df
 
 # Sidebar
-with st.sidebar.header('1. Upload your CSV data'):
+with st.sidebar.header('Upload file'):
     uploaded_file = st.sidebar.file_uploader("Upload your input file", type=['txt'])
     st.sidebar.markdown("""
-![Example input file](test.txt)
+[Example input file](https://raw.githubusercontent.com/agusscarmu/Aromatase-Drug-Discovery/main/test.txt)
 """)
 
 if st.sidebar.button('Predict'):
@@ -95,6 +141,7 @@ if st.sidebar.button('Predict'):
     st.write(desc_subset.shape)
 
     # Apply trained model to make prediction on query compounds
-    build_model(desc_subset, data['molecule'])
+    with st.spinner("Building model and making predictions..."):
+        build_model(desc_subset, data['molecule'])
 else:
     st.info('Upload input data in the sidebar to start!')
