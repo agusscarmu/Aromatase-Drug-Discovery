@@ -8,46 +8,67 @@ import os
 import base64
 import joblib
 
+import numpy as np
+from rdkit import Chem
+from rdkit.Chem import Descriptors, Lipinski
+
+def lipinski(smiles, verbose=False):
+    
+    moldata = []
+    for elem in smiles:
+        mol=Chem.MolFromSmiles(elem)
+        moldata.append(mol)
+        
+    baseData = np.arange(1,1)
+    i=0
+    for mol in moldata:
+        
+        desc_MolWt = Descriptors.MolWt(mol)
+        desc_MolLogP = Descriptors.MolLogP(mol)
+        desc_NumHDonors = Lipinski.NumHDonors(mol)
+        desc_NumHAcceptors = Lipinski.NumHAcceptors(mol)
+        
+        row = np.array([desc_MolWt,
+                        desc_MolLogP,
+                        desc_NumHDonors,
+                        desc_NumHAcceptors])
+        
+        if(i==0):
+            baseData=row
+        else:
+            baseData=np.vstack([baseData,row])
+        i=i+1
+        
+    columnNames = ['MW', 'LogP', 'NumHDonors', 'NumHAcceptors']
+    descriptors = pd.DataFrame(data = baseData, columns= columnNames)
+    
+    return descriptors
+
 def randomColor():
     import random
     color = "#" + ''.join([random.choice('0123456789ABCDEF') for i in range(6)])
     return color
 
 def draw(data):
+
     df = pd.read_csv('bioactivity_data_pIC50.csv')
 
-    plt.figure(figsize=(5.5,5.5))
+    fig = plt.figure()
 
-    sns.scatterplot(x='pIC50', y='LogP', data=df, size='pIC50', edgecolor='black', alpha=0.7)
+    ax = fig.add_subplot(projection='3d')
 
+    scatter = ax.scatter(df['pIC50'], df['LogP'], df['MW'], c=df['pIC50'], cmap='plasma', s=df['pIC50'], edgecolor='black', alpha=0.3)
+    print(data)
+    for _, row in data.iterrows():
+        ax.scatter(row['pIC50'], row['LogP'], row['MW'], c=randomColor(), s=50, edgecolor='black', alpha=1, label=row['molecule_name'])
 
-    for column_name, column_values in data.iterrows():
+    ax.set_xlabel('pIC50', fontsize=10, fontweight='bold')
+    ax.set_ylabel('LogP', fontsize=10, fontweight='bold')
+    ax.set_zlabel('MW', fontsize=10, fontweight='bold')
+    ax.legend(bbox_to_anchor=(1.05, 1), loc=2, borderaxespad=0)
 
-        plt.axvline(x=column_values[1], color=randomColor(), linestyle='--', label=column_values[0])
-
-
-
-    plt.xlabel('pIC50', fontsize=14, fontweight='bold')
-    plt.ylabel('LogP', fontsize=14, fontweight='bold')
-    plt.legend(bbox_to_anchor=(1.05,1), loc=2, borderaxespad=0)
-
-    st.header('**pIC50 & LogP**')
-    st.pyplot(plt)
-
-    plt.figure(figsize=(5.5,5.5))
-
-    sns.scatterplot(x='pIC50', y='MW', data=df, size='pIC50', edgecolor='black', alpha=0.7)
-
-    for column_name, column_values in data.iterrows():
-
-        plt.axvline(x=column_values[1], color=randomColor(), linestyle='--', label=column_values[0])
-
-    plt.xlabel('pIC50', fontsize=14, fontweight='bold')
-    plt.ylabel('MW', fontsize=14, fontweight='bold')
-    plt.legend(bbox_to_anchor=(1.05,1), loc=2, borderaxespad=0)
-
-    st.header('**MW & pIC50**')
-    st.pyplot(plt)
+    st.header('**pIC50, LogP & MW**')
+    st.pyplot(fig)
 
 
 # Molecular descriptor calculator
@@ -66,19 +87,27 @@ def filedownload(df):
     return href
 
 # Model building
-def build_model(input_data, molecule):
+def build_model(input_data, data):
     # Reads in saved regression model
     load_model = joblib.load('rfm.pkl')
     # Apply model to make predictions
     prediction = load_model.predict(input_data)
     st.header('**Prediction output**')
     prediction_output = pd.Series(prediction, name='pIC50')
-    molecule_name = pd.Series(molecule, name='molecule_name')
+    molecule_name = pd.Series(data['molecule'], name='molecule_name')
     df = pd.concat([molecule_name, prediction_output], axis=1)
     st.write(df)
     st.markdown(filedownload(df), unsafe_allow_html=True)
+
+    df_lipinski = lipinski(data['smile'])
+
+    df_combined = pd.concat([df, df_lipinski], axis=1)
+
+    st.header('**Lipinski Descriptors**')
+    st.write(df_combined)
+
     with st.spinner("Generating visualizations..."):
-        draw(df)
+        draw(df_combined)
 
 # # Logo image
 # image = Image.open('logo.png')
@@ -133,15 +162,11 @@ if st.sidebar.button('Predict'):
     st.write(desc)
     st.write(desc.shape)
 
-    # Read descriptor list used in previously built model
-    st.header('**Subset of descriptors from previously built models**')
     Xlist = list(pd.read_csv('descriptor_list.csv').columns)
     desc_subset = desc[Xlist]
-    st.write(desc_subset)
-    st.write(desc_subset.shape)
 
     # Apply trained model to make prediction on query compounds
     with st.spinner("Building model and making predictions..."):
-        build_model(desc_subset, data['molecule'])
+        build_model(desc_subset, data)
 else:
     st.info('Upload input data in the sidebar to start!')
